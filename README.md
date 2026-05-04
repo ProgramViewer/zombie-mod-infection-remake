@@ -13,7 +13,7 @@
 ---
 ## Required AMX Mod version
  
-- AMX Mod X 1.8.3 o superior
+- AMX Mod X 1.8.3 or higher
 ---
 
 ## Licence
@@ -34,7 +34,7 @@ This project uses the **GNU General Public License v3.0** (GPL-3.0).
 - Remove or alter the license terms.
 - Add extra restrictions on users' rights.
 - Hold the authors liable for any damages (no warranty).
-- 
+
 For the full license text, see the [LICENSE](LICENSE) file or visit [gnu.org/licenses/gpl-3.0.html](https://www.gnu.org/licenses/gpl-3.0.html).
 
 ---
