@@ -2029,7 +2029,6 @@ public start_infection_mode()
 	task_infect_user(first_zombie, 0, 0);
 	
 	client_print(0, print_center, "%L", LANG_PLAYER, "ZOMBIES_COMING");
-	client_cmd(first_zombie, "nightvision");
 	
 	// Force all alive non-zombie players to CT
 	for(new i = 1; i <= g_maxplayers; i++)
@@ -2805,7 +2804,7 @@ public show_primary_menu(id, start, count, const title[])
 	new visible_count = 0;
 	new visible_indices[32];  
 	
-	// Títle
+	// TÃ­tle
 	len += formatex(menu[len], charsmax(menu)-len, "\y%L^n^n", LANG_PLAYER, title);
 	
 	// Loop through the range of weapons in this category
