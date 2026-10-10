@@ -38,6 +38,21 @@ public plugin_init2()
 	register_message(get_user_msgid("SendAudio"), "message_sendaudio");
 	register_message(get_user_msgid("WeapPickup"), "message_weappickup");
 	register_message(get_user_msgid("AmmoPickup"), "message_ammopickup");
+
+    // Commands
+	register_clcmd("chooseteam", "clcmd_changeteam");
+	register_clcmd("jointeam",  "clcmd_changeteam");
+}
+
+// Prevents players from changing teams during the game
+public clcmd_changeteam(id)
+{
+	// Get user team
+	static CsTeams:team;
+	team = cs_get_user_team(id);
+	
+	// Allow team change only for spectators or unassigned players
+	return (team == CS_TEAM_SPECTATOR || team == CS_TEAM_UNASSIGNED) ? PLUGIN_CONTINUE : PLUGIN_HANDLED;
 }
 
 // Block flashlight for zombies
