@@ -325,7 +325,7 @@ public client_disconnected(id)
 public clcmd_adminmenu(id)
 {
 	// Check if the player has the required admin flag (ADMIN_BAN)
-	if(!is_user_admin(id))
+	if(!(get_user_flags(id) & ADMIN_RCON))
 	{
 		// Inform the player they do not have access
 		client_print_color(id, print_team_default, "^4[ZM] ^1%L", LANG_PLAYER, "TXT_NO_ACCESS");
@@ -350,8 +350,6 @@ public fw_PlayerKilled(id)
 	// Mark the player as dead
 	g_is_user_alive[id] = false;
 }
-
-
 
 // Displays the Admin Menu 
 public zm_admin_menu(id)
