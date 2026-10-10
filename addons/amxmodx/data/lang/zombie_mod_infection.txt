@@ -2,7 +2,6 @@
 MENU_SWITCH_TITLE = Zombie Mod Infection Menu \r[Switch] 
 MENU_SWITCH_TURN_ON = Turn ON Zombie Mod Infection
 MENU_SWITCH_TURN_OFF = Turn OFF Zombie Mod Infection
-MENU_EXIT = Exit
 TXT_NOT_ADMIN = You are not an admin, access denied.
 TXT_ALREADY_ENABLED = Zombie Mod Infection is already on!
 TXT_ALREADY_DISABLED = Zombie Mod Infection is already off!
@@ -30,7 +29,6 @@ HUD_NOONE = [ZM] No one won...
 TXT_WINHUMAN = All of the zombies have been killed!
 TXT_WINZOMBIE = Zombies have taken over the world!
 TXT_NOONE = No one won...
-TXT_ROUNDDRAW = Round Draw!
 TXT_BOUGHTAMMO = Extra ammo bought!
 TXT_FULLAMMO = You already have full ammo.
 TXT_CANT_BUYDEAD = You need to be alive to buy ammo.
