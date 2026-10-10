@@ -9,6 +9,8 @@
 #define FLASHLIGHT_IMPULSE 100 // Flashlight impulse ID
 const USE_USING = 2; // Entity usage state
 
+#define is_player_zombie(%1) (zmod_get_user_zombie(%1) || zmod_get_user_superzombie(%1))
+
 public plugin_init()
 {
 	// Register Plugin
@@ -99,13 +101,13 @@ public event_current_weapon(id)
 // Prevent zombies from grabbing weapons
 public fw_TouchWeapon(weapon, id)
 {
-	return (is_user_connected(id) && zmod_get_user_zombie(id)) ? HAM_SUPERCEDE : HAM_IGNORED;
+	return (is_user_connected(id) && is_player_zombie(id)) ? HAM_SUPERCEDE : HAM_IGNORED;
 }
 
 // Prevent zombies from using stationaries 
 public fw_UseStationary(entity, caller, activator, use_type)
 {
-	return (use_type == USE_USING && is_user_connected(caller) && zmod_get_user_zombie(caller)) ? HAM_SUPERCEDE : HAM_IGNORED;
+	return (use_type == USE_USING && is_user_connected(caller) && is_player_zombie(caller)) ? HAM_SUPERCEDE : HAM_IGNORED;
 }
 
 // Ham use pushble forward
@@ -118,13 +120,13 @@ public fw_UsePushable()
 // Prevent zombies from seeing any weapon pickup icon
 public message_weappickup(msgid, msgdest, id)
 {
-	return zmod_get_user_zombie(id) ? PLUGIN_HANDLED : PLUGIN_CONTINUE;
+	return is_player_zombie(id) ? PLUGIN_HANDLED : PLUGIN_CONTINUE;
 }
 
 // Prevent zombies from seeing any ammo pickup icon
 public message_ammopickup(msgid, dest, id)
 {
-	return zmod_get_user_zombie(id) ? PLUGIN_HANDLED : PLUGIN_CONTINUE;
+	return is_player_zombie(id) ? PLUGIN_HANDLED : PLUGIN_CONTINUE;
 }
 
 // Block sounds to play our own
