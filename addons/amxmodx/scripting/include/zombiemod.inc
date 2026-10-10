@@ -1,6 +1,6 @@
 /*==============================================================================================================*/
 
-                                  /*========================================================*\
+                              /*========================================================*\
                               ||::::::::::::::::::::::::::::::::::::::::::::::::::::::::||
                               ||---------[ Zombie Mod Infection Includes File ]---------||
                               ||::::::::::::::::::::::::::::::::::::::::::::::::::::::::||
@@ -71,21 +71,33 @@ native zmod_is_round_infection()
 // Returns: True if super zombie round, false otherwise
 native zmod_is_round_super()
 
+// Check if the current round is a multiple infection round
+// Returns: True if multiple infection round, false otherwise
+native zmod_is_round_multi()
+
 // Check if the weapon is allowed
 // Returns: true if allowed, false otherwise
-native zmod_is_weapon_allowed(weaponid);
+native zmod_is_weapon_allowed(weaponid)
 
 // Assign a random allowed primary weapon to the player
 // Returns: 1 on success, 0 on failure
-native zmod_assign_primary_weapon(id);
+native zmod_assign_primary_weapon(id)
 
 // Assign a random secondary weapon (pistol) to the player
 // Returns: 1 on success, 0 on failure
-native zmod_assign_secondary_weapon(id);
+native zmod_assign_secondary_weapon(id)
 
 // Assigns nades to the player
 // Returns: 1 on success, 0 on failure
-native zmod_assign_grenades(id);
+native zmod_assign_grenades(id)
+
+// Requests a specific spawn type for a player on their next respawn.
+// The core will use this value in fw_PlayerSpawnPost to determine
+// whether to turn the player into a human, zombie, or super zombie.
+// Param id: Player index.
+// Param type: -1 = no request (clear any pending), 0 = human. 1 = normal zombie, 2 = super zombie
+// Returns: 1 on success, 0 on invalid type, -1 on invalid player.
+native zmod_request_spawn_type(id, type)
 
 // Called when a player gets infected
 // Params: victim - Player index who was infected, attacker - Player index who infected them
