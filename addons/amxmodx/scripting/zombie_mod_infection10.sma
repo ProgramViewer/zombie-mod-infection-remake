@@ -48,6 +48,23 @@
 *|
 *|   May 2026 - v1.0 - First Release
 *|
+*|   June 2026 - v1.2 - Major Update
+*|     - Added separate model array for first zombie with fallback
+*|     - Added safe precache system for 8 knife models (prevents crashes)
+*|     - Added cvar zmod_silent_firstzombie for silent footsteps
+*|     - Added native zmod_request_spawn_type for external respawn plugins
+*|     - Added cvar zmod_superzombie_infect (kill vs infect)
+*|     - Added cvar zmod_multi_enabled to toggle multiple infection
+*|     - Super zombies now independent from normal zombies (separate flags)
+*|     - Respawned super zombies get 25% health instead of full
+*|     - Fixed zombie counts and chants to include super zombies
+*|     - Fixed super zombie team assignment in super zombie round
+*|     - Optimized task_make_zombie with ternary assignments
+*|     - Simplified WeaponDataStruct (removed MaxClip/AmmoID/AmmoType)
+*|     - Removed clcmd_changeteam (team changes handled externally)
+*|     - Super zombie no longer sets g_bitFirstZombie (by design)
+*|     - Adjusted task timings and enable sound
+*|
 */
 
 /*========================================================*\
@@ -59,7 +76,6 @@
 // You can change these to your preferred models and sounds! 
 // Make sure you don't mistype anything including the file path
 // For player models the path is already built for precache, so you just need to write the model name only
-// For knife models the path is already built for precache, so you just need to write the model name only
 
 // Zombie chant time delay
 #define ZOMBIE_CHANT_DELAY 40.0
@@ -97,23 +113,33 @@ new const lastzombiechant[] = "zombie_mod/zombie_speech_last_zombie.wav";
 // Super zombie appearance sound
 new const superappears[] = "ambience/the_horror2.wav"; 
 
+// First zombie player models (selected randomly if multiple are added)
+new const FirstZombieModel[][] = {"zm_inf_zombie"}; 
+
 // Zombie player models (selected randomly if multiple are added)
 new const ZombieModel[][] = {"zm_inf_zombie"}; 
 
-// Zombie knife model
-new const ZombieKnife[] = "models/zombie_mod/v_zombie_knife.mdl"; 
-
 // Super zombie player models 
-new const SuperModel[][] = {"zm_inf_zombie"}; 
-
-// Super zombie knife 
-new const SuperKnife[] = "models/v_crowbar.mdl";
+new const SuperModel[][] = {"zm_inf_zombie"};
 
 // Human player models (randomly selected on spawn)
-new const HumanModel[][] = {"urban", "gign", "sas", "gsg9", "terror", "guerilla", "arctic", "leet"};
+new const HumanModel[][] = {"urban", "gign", "sas", "gsg9", "terror", "guerilla", "arctic", "leet"}; 
 
-// Human knife model
-new const HumanKnife[] = "models/zombie_mod/v_human_knife.mdl"; 
+// First zombie knife models
+new const FirstZombiePKnife[] = "";
+new const FirstZombieVKnife[] = "models/zombie_mod/v_zombie_knife.mdl";
+
+// Zombie knife models
+new const ZombiePKnife[] = "";
+new const ZombieVKnife[] = "models/zombie_mod/v_zombie_knife.mdl"; 
+
+// Super zombie knife models
+new const SuperPKnife[] = "models/p_crowbar.mdl";
+new const SuperVKnife[] = "models/v_crowbar.mdl";
+
+// Human knife models
+new const HumanPKnife[] = "";
+new const HumanVKnife[] = "models/zombie_mod/v_human_knife.mdl"; 
 
 // ============================================================================
 // === Customization ends here! ===
@@ -143,7 +169,7 @@ new const HumanKnife[] = "models/zombie_mod/v_human_knife.mdl";
 ||::::::::::::::::::::::::::::::::::::::::::::::::::::::::||
 \*========================================================*/
 
-#define VERSION "1.0"
+#define VERSION "1.2"
 
 // Damage and effect flags
 const DMG_HEGRENADE = (1<<24); // Damage caused by HE grenades
@@ -168,49 +194,56 @@ const ADDITIONAL_AMMO = EV_INT_iuser1; // Additional ammo offset in player entit
 #define is_null_weapon(%1) (%1 == CSW_KNIFE || %1 == CSW_FLASHBANG || %1 == CSW_HEGRENADE || %1 == CSW_SMOKEGRENADE || %1 == CSW_C4)
 
 // Defined structure for weapons
-enum _:WeaponDataStruct {WeaponID, MaxBPAmmo, MaxClip, AmmoID, AmmoType[16], EntityName[32], WeaponName[32], AltName[32]}
-
-// Ammo IDs for weapons
-new const g_ammo_ids[] = { -1, 9, -1, 2, 12, 5, 14, 6, 4, 13, 10, 7, 6, 4, 4, 4, 6, 10, 1, 10, 3, 5, 4, 10, 2, 11, 8, 4, 2, -1, 7 }
+enum _:WeaponDataStruct 
+{
+	WeaponID, 
+	MaxBPAmmo, 
+	EntityName[32], 
+	WeaponName[32], 
+	AltName[32]
+};
 
 // Primary weapon data
 new const g_primary_weapons[][WeaponDataStruct] =
 {
-	{CSW_M3,/*-----------*/32,/*-----*/8,/*----*/5,/*-----*/"ammo_buckshot",/*-----*/"weapon_m3",/*---------*/"Leone 12 Gauge Super",/*-------------*/"Pump Shotgun"},  
-	{CSW_XM1014,/*-------*/32,/*-----*/7,/*----*/5,/*-----*/"ammo_buckshot",/*-----*/"weapon_xm1014",/*-----*/"Leone YG1265 Auto Shotgun",/*--------*/"Auto Shotgun"},
-	{CSW_TMP,/*----------*/120,/*----*/30,/*---*/10,/*----*/"ammo_9mm",/*----------*/"weapon_tmp",/*--------*/"Schmidt Machine Pistol",/*-----------*/"TMP"},
-	{CSW_MAC10,/*--------*/100,/*----*/30,/*---*/6,/*-----*/"ammo_45acp",/*--------*/"weapon_mac10",/*------*/"Ingram MAC-10",/*--------------------*/"Mac-10"},
-	{CSW_MP5NAVY,/*------*/120,/*----*/30,/*---*/10,/*----*/"ammo_9mm",/*----------*/"weapon_mp5navy",/*----*/"KM Sub-Machine Gun",/*---------------*/"MP5 Navy"},
-	{CSW_P90,/*----------*/100,/*----*/50,/*---*/7,/*-----*/"ammo_57mm",/*---------*/"weapon_p90",/*--------*/"ES C90",/*---------------------------*/"P90"},
-	{CSW_UMP45,/*--------*/100,/*----*/25,/*---*/6,/*-----*/"ammo_45acp",/*--------*/"weapon_ump45",/*------*/"KM UMP45",/*-------------------------*/"UMP45"}, 
-	{CSW_FAMAS,/*--------*/90,/*-----*/25,/*---*/4,/*-----*/"ammo_556nato",/*------*/"weapon_famas",/*------*/"Clarion 5.56",/*---------------------*/"Famas"}, 
-	{CSW_GALIL,/*--------*/90,/*-----*/35,/*---*/4,/*-----*/"ammo_556nato",/*------*/"weapon_galil",/*------*/"IDF Defender",/*---------------------*/"Galil"},
-	{CSW_AK47,/*---------*/90,/*-----*/30,/*---*/2,/*-----*/"ammo_762nato",/*------*/"weapon_ak47",/*-------*/"CV-47",/*----------------------------*/"AK-47"}, 
-	{CSW_M4A1,/*---------*/90,/*-----*/30,/*---*/4,/*-----*/"ammo_556nato",/*------*/"weapon_m4a1",/*-------*/"Maverick M4A1 Carbine",/*------------*/"M4A1"},  
-	{CSW_SG552,/*--------*/90,/*-----*/30,/*---*/4,/*-----*/"ammo_556nato",/*------*/"weapon_sg552",/*------*/"Krieg 552",/*------------------------*/"SG552"},
-	{CSW_AUG,/*----------*/90,/*-----*/30,/*---*/4,/*-----*/"ammo_556nato",/*------*/"weapon_aug",/*--------*/"Bullpup",/*--------------------------*/"Aug"}, 
-	{CSW_SCOUT,/*--------*/90,/*-----*/10,/*---*/2,/*-----*/"ammo_762nato",/*------*/"weapon_scout",/*------*/"Schmidt Scout",/*--------------------*/"Scout"},
-	{CSW_AWP,/*----------*/30,/*-----*/10,/*---*/1,/*-----*/"ammo_338magnum",/*----*/"weapon_awp",/*--------*/"Magnum Sniper Rifle",/*--------------*/"AWP"}, 
-	{CSW_SG550,/*--------*/90,/*-----*/30,/*---*/4,/*-----*/"ammo_556nato",/*------*/"weapon_sg550",/*------*/"Krieg 550 Commando",/*---------------*/"SG550"}, 
-	{CSW_G3SG1,/*--------*/90,/*-----*/20,/*---*/2,/*-----*/"ammo_762nato",/*------*/"weapon_g3sg1",/*------*/"D3AU1",/*----------------------------*/"G3SG1"}
+	{CSW_M3,/*---------*/32,/*------*/"weapon_m3",/*-----------*/"Leone 12 Gauge Super",/*--------------*/"Pump Shotgun"},
+	{CSW_XM1014,/*-----*/32,/*------*/"weapon_xm1014",/*-------*/"Leone YG1265 Auto Shotgun",/*---------*/"Auto Shotgun"},
+	{CSW_TMP,/*--------*/120,/*-----*/"weapon_tmp",/*----------*/"Schmidt Machine Pistol",/*------------*/"TMP"},
+	{CSW_MAC10,/*------*/100,/*-----*/"weapon_mac10",/*--------*/"Ingram MAC-10",/*---------------------*/"Mac-10"},
+	{CSW_MP5NAVY,/*----*/120,/*-----*/"weapon_mp5navy",/*------*/"KM Sub-Machine Gun",/*----------------*/"MP5 Navy"},
+	{CSW_P90,/*--------*/100,/*-----*/"weapon_p90",/*----------*/"ES C90",/*----------------------------*/"P90"},
+	{CSW_UMP45,/*------*/100,/*-----*/"weapon_ump45",/*--------*/"KM UMP45",/*--------------------------*/"UMP45"},
+	{CSW_FAMAS,/*------*/90,/*------*/"weapon_famas",/*--------*/"Clarion 5.56",/*----------------------*/"Famas"},
+	{CSW_GALIL,/*------*/90,/*------*/"weapon_galil",/*--------*/"IDF Defender",/*----------------------*/"Galil"},
+	{CSW_AK47,/*-------*/90,/*------*/"weapon_ak47",/*---------*/"CV-47",/*-----------------------------*/"AK-47"},
+	{CSW_M4A1,/*-------*/90,/*------*/"weapon_m4a1",/*---------*/"Maverick M4A1 Carbine",/*-------------*/"M4A1"},
+	{CSW_SG552,/*------*/90,/*------*/"weapon_sg552",/*--------*/"Krieg 552",/*-------------------------*/"SG552"},
+	{CSW_AUG,/*--------*/90,/*------*/"weapon_aug",/*----------*/"Bullpup",/*---------------------------*/"Aug"},
+	{CSW_SCOUT,/*------*/90,/*------*/"weapon_scout",/*--------*/"Schmidt Scout",/*---------------------*/"Scout"},
+	{CSW_AWP,/*--------*/30,/*------*/"weapon_awp",/*----------*/"Magnum Sniper Rifle",/*---------------*/"AWP"},
+	{CSW_SG550,/*------*/90,/*------*/"weapon_sg550",/*--------*/"Krieg 550 Commando",/*----------------*/"SG550"},
+	{CSW_G3SG1,/*------*/90,/*------*/"weapon_g3sg1",/*--------*/"D3AU1",/*-----------------------------*/"G3SG1"}
 };
-
-new g_primary_cvar[sizeof(g_primary_weapons)];
-new g_visible_weapons[33][32]; 
 
 // Secondary weapon data
 new const g_secondary_weapons[][WeaponDataStruct] =
 {
-	{CSW_GLOCK18,/*------*/120,/*----*/20,/*--*/10,/*---*/"ammo_9mm",/*------*/"weapon_glock18",/*--------*/"9x19mm Sidearm",/*-------*/"Glock-18"}, 
-	{CSW_USP,/*----------*/100,/*----*/12,/*--*/6,/*----*/"ammo_45acp",/*----*/"weapon_usp",/*------------*/"KM .45 Tactical",/*------*/"USP"}, 
-	{CSW_P228,/*---------*/52,/*-----*/13,/*--*/9,/*----*/"ammo_357sig",/*---*/"weapon_p228",/*-----------*/"228 Compact",/*----------*/"P228"},
-	{CSW_DEAGLE,/*-------*/35,/*-----*/7,/*---*/8,/*----*/"ammo_50ae",/*-----*/"weapon_deagle",/*---------*/"Night Hawk .50C",/*------*/"Desert Eagle"}, 
-	{CSW_FIVESEVEN,/*----*/100,/*----*/20,/*--*/7,/*----*/"ammo_57mm",/*-----*/"weapon_fiveseven",/*------*/"Five-Seven",/*-----------*/"Five-Seven"},
-	{CSW_ELITE,/*--------*/120,/*----*/30,/*--*/10,/*---*/"ammo_9mm",/*------*/"weapon_elite",/*----------*/".40 Dual Elites",/*------*/"Dual Elites"}
+	{CSW_GLOCK18,/*--------*/120,/*-------*/"weapon_glock18",/*--------*/"9x19mm Sidearm",/*----------*/"Glock-18"},
+	{CSW_USP,/*------------*/100,/*-------*/"weapon_usp",/*------------*/"KM .45 Tactical",/*---------*/"USP"},
+	{CSW_P228,/*-----------*/52,/*--------*/"weapon_p228",/*-----------*/"228 Compact",/*-------------*/"P228"},
+	{CSW_DEAGLE,/*---------*/35,/*--------*/"weapon_deagle",/*---------*/"Night Hawk .50C",/*---------*/"Desert Eagle"},
+	{CSW_FIVESEVEN,/*------*/100,/*-------*/"weapon_fiveseven",/*------*/"Five-Seven",/*--------------*/"Five-Seven"},
+	{CSW_ELITE,/*----------*/120,/*-------*/"weapon_elite",/*----------*/".40 Dual Elites",/*---------*/"Dual Elites"}
 };
 
 // Enum to identify player count types
-enum CountType {COUNT_ALIVE = 1, COUNT_ZOMBIES, COUNT_HUMANS, COUNT_NOMINEES}
+enum CountType 
+{
+	COUNT_ALIVE = 1, 
+	COUNT_ZOMBIES, 
+	COUNT_HUMANS, 
+	COUNT_NOMINEES
+};
 
 new bool:g_selected_firstzombie; // Whether the first zombie has been selected
 new bool:g_enough_players = true; // Whether there are enough players to start the game
@@ -221,6 +254,7 @@ new bool:g_freezetime;
 new bool:g_restart_scheduled = false;
 new bool:g_zmod_enabled;
 
+new g_visible_weapons[33][32]; 
 new g_maxplayers; // Maximum number of players
 new g_newround; // New round state
 new g_endround; // End round state
@@ -258,14 +292,25 @@ new g_grenades_saved[33]; // Saved grenades for auto repick
 new g_menu_offset[33];
 new g_menu_count[33];
 new g_playername[33][32]; // Player names
+new g_RequestedSpawnType[33]; // -1 = no request , 0 = human, 1 = zombie, 2 = superzombie
 
 // Global arrays for valid models
+new g_ValidFirstZombieModels[32][32];
 new g_ValidZombieModels[32][32];
 new g_ValidHumanModels[32][32];
 new g_ValidSuperModels[32][32];
+new g_iValidFirstZombieCount;
 new g_iValidZombieCount;
 new g_iValidHumanCount;
 new g_iValidSuperCount; 
+new g_ValidHumanPKnife[64];
+new g_ValidHumanVKnife[64];
+new g_ValidZombiePKnife[64];
+new g_ValidZombieVKnife[64];
+new g_ValidFirstZombiePKnife[64];
+new g_ValidFirstZombieVKnife[64];
+new g_ValidSuperPKnife[64];
+new g_ValidSuperVKnife[64];
 
 new g_fwd_user_cured; // Forward for when a player is cured
 new g_fwd_user_infected; // Forward for when a player is infected
@@ -275,6 +320,7 @@ new g_fwd_infection_begin; // Forward for infection round started
 new cvar_lightning; // Lightning effect cvar
 new cvar_zombie_brainhealth; // Zombie brain health cvar
 new cvar_firstzombie_health; // First zombie health cvar
+new cvar_silent_firstzombie; // First zombie silent footsteps
 new cvar_zombie_armor; // Zombie armor cvar
 new cvar_zombie_health; // Zombie health cvar
 new cvar_zombie_speed; // Zombie speed cvar
@@ -284,8 +330,10 @@ new cvar_superzombie_speed; // Super zombie speed cvar
 new cvar_superzombie_gravity; // Super zombie gravity cvar
 new cvar_superzombie_chance; // Super zombie chance cvar
 new cvar_superzombie_enabled; // Super zombie enabled cvar
+new cvar_superzombie_infect; // Super zombie allowed infect cvar
 new cvar_multi_min_players; // Multiple infection minimun players cvar
 new cvar_multi_chance; // Multiple infection chance cvar
+new cvar_multi_enabled; // Multiple infection enabled cvar
 new cvar_human_health; // Human health cvar
 new cvar_human_speed; // Human speed cvar
 new cvar_human_gravity; // Human gravity cvar
@@ -294,6 +342,7 @@ new cvar_he_hitself; // Self damage with he grenade
 new cvar_delay; // Round start delay cvar
 new cvar_gamedescription; // Game description cvar
 new cvar_weapons_display; // Weapon display cvar
+new cvar_primaries[sizeof(g_primary_weapons)]; 
 new cvar_weapons_rifles; // Allowed rifles cvar
 new cvar_weapons_smgs; // Allowed SMGs cvar
 new cvar_weapons_shotguns; // Allowed shotguns cvar
@@ -333,14 +382,18 @@ new Float:g_cached_superzombie_speed;
 new Float:g_cached_superzombie_gravity;
 new g_cached_superzombie_chance;
 new g_cached_superzombie_enabled;
+new g_cached_superzombie_infect;
 new g_cached_multi_chance;
 new g_cached_multi_min_players;
+new g_cached_multi_enabled;
+new g_cached_silent_firstzombie;
 
 // Cached human cvars
 new g_cached_human_health;
 new Float:g_cached_human_speed;
 new Float:g_cached_human_gravity;
 
+// Sound Effects
 new const sound_armorhit[] = "player/bhit_helmet-1.wav"; // Armor hit sound
 new const sound_weapon_restricted[] = "events/friend_died.wav"; // Restricted weapon sound
 new const sound_default_terwin[] = "radio/terwin.wav"; // Default terrorists win sound
@@ -348,6 +401,7 @@ new const sound_default_ctwin[] = "radio/ctwin.wav"; // Default counter-terroris
 new const sound_default_rounddraw[] = "radio/rounddraw.wav"; // Default round draw sound
 new const announce_sound[] = "vox/bizwarn.wav";
 new const disable_sound[]  = "ambience/3dmstart.wav";
+new const enable_sound[]  = "weapons/mortar.wav";
 
 /*========================================================*\
 ||::::::::::::::::::::::::::::::::::::::::::::::::::::::::||
@@ -375,6 +429,7 @@ public plugin_natives()
 	register_native("zmod_assign_primary_weapon", "native_zmod_assign_primary_weapon", 1);
 	register_native("zmod_assign_secondary_weapon", "native_zmod_assign_secondary_weapon", 1);
 	register_native("zmod_assign_grenades", "native_zmod_assign_grenades", 1);
+	register_native("zmod_request_spawn_type", "native_zmod_request_spawn_type", 1);
 }
 
 public plugin_precache()
@@ -394,7 +449,7 @@ public plugin_precache()
 	// Precache sounds used for trigger
 	precache_sound(announce_sound);
 	precache_sound(disable_sound);
-	precache_sound_array(zombie_win, sizeof(zombie_win));
+	precache_sound(enable_sound);
 	
 	// Plugin disabled?
 	if(!get_pcvar_num(cvar_enabled)) 
@@ -426,13 +481,14 @@ public plugin_precache()
 	for(new i = 0; i < sizeof(g_primary_weapons); i++)
 	{
 		formatex(cvar_name, charsmax(cvar_name), "zmod_weapon_%s", g_primary_weapons[i][EntityName][7]);
-		g_primary_cvar[i] = register_cvar(cvar_name, "1");
+		cvar_primaries[i] = register_cvar(cvar_name, "1");
 	}
 	
 	// Cvars Zombies
 	cvar_zombie_armor = register_cvar("zmod_zombie_armor", "0.75");
 	cvar_zombie_brainhealth = register_cvar("zmod_zombie_brainhealth", "100");
 	cvar_firstzombie_health = register_cvar("zmod_firstzombie_health", "6000");
+	cvar_silent_firstzombie = register_cvar("zmod_silent_firstzombie", "1");
 	cvar_zombie_health = register_cvar("zmod_zombie_health", "2250");
 	cvar_zombie_speed = register_cvar("zmod_zombie_speed", "260.0");
 	cvar_zombie_gravity = register_cvar("zmod_zombie_gravity", "0.9");
@@ -441,8 +497,10 @@ public plugin_precache()
 	cvar_superzombie_gravity = register_cvar("zmod_superzombie_gravity", "0.6");
 	cvar_superzombie_chance = register_cvar("zmod_superzombie_chance", "20");
 	cvar_superzombie_enabled = register_cvar("zmod_superzombie_enabled", "0");
+	cvar_superzombie_infect = register_cvar("zmod_superzombie_infect", "1");
 	cvar_multi_chance = register_cvar("zmod_multi_chance", "3");
 	cvar_multi_min_players = register_cvar("zmod_multi_min_players", "12");
+	cvar_multi_enabled = register_cvar("zmod_multi_enabled", "1");
 	
 	// Cvars Humans
 	cvar_human_health = register_cvar("zmod_human_health", "100");
@@ -460,17 +518,30 @@ public plugin_precache()
 	precache_sound(sound_default_rounddraw);
 	
 	// Precache player models
+	precache_player_models(FirstZombieModel, sizeof(FirstZombieModel), g_ValidFirstZombieModels, charsmax(g_ValidFirstZombieModels[]), "zombie", g_iValidFirstZombieCount);
 	precache_player_models(ZombieModel, sizeof(ZombieModel), g_ValidZombieModels, charsmax(g_ValidZombieModels[]), "zombie", g_iValidZombieCount);
 	precache_player_models(SuperModel, sizeof(SuperModel), g_ValidSuperModels, charsmax(g_ValidSuperModels[]), "zombie", g_iValidSuperCount);
 	precache_player_models(HumanModel, sizeof(HumanModel), g_ValidHumanModels, charsmax(g_ValidHumanModels[]), "urban", g_iValidHumanCount);
 	
-	// Precache knife models
-	precache_model(ZombieKnife);
-	precache_model(SuperKnife);
-	precache_model(HumanKnife);
+	// Human knife models
+	precache_knife_models(HumanPKnife, "models/p_knife.mdl", g_ValidHumanPKnife, charsmax(g_ValidHumanPKnife));
+	precache_knife_models(HumanVKnife, "models/v_knife.mdl", g_ValidHumanVKnife, charsmax(g_ValidHumanVKnife));
+	
+	// Zombie knife models (p_ fallback is empty -> use game default)
+	precache_knife_models(ZombiePKnife, "", g_ValidZombiePKnife, charsmax(g_ValidZombiePKnife));
+	precache_knife_models(ZombieVKnife, "models/v_knife.mdl", g_ValidZombieVKnife, charsmax(g_ValidZombieVKnife));
+	
+	// First zombie knife models
+	precache_knife_models(FirstZombiePKnife, "", g_ValidFirstZombiePKnife, charsmax(g_ValidFirstZombiePKnife));
+	precache_knife_models(FirstZombieVKnife, "models/v_knife.mdl", g_ValidFirstZombieVKnife, charsmax(g_ValidFirstZombieVKnife));
+	
+	// Super zombie knife models
+	precache_knife_models(SuperPKnife, "", g_ValidSuperPKnife, charsmax(g_ValidSuperPKnife));
+	precache_knife_models(SuperVKnife, "models/v_knife.mdl", g_ValidSuperVKnife, charsmax(g_ValidSuperVKnife));
 	
 	// Precache sound arrays
 	precache_sound_array(humans_win, sizeof(humans_win));
+	precache_sound_array(zombie_win, sizeof(zombie_win));
 	precache_sound_array(rounddraw, sizeof(rounddraw));
 	precache_sound_array(zombie_chants, sizeof(zombie_chants));
 	precache_sound_array(zombie_death, sizeof(zombie_death));
@@ -514,6 +585,7 @@ public plugin_init()
 	RegisterHamBots(Ham_Killed, "fw_PlayerKilled");
 	RegisterHamBots(Ham_TakeDamage, "fw_TakeDamage");
 	RegisterHamBots(Ham_TraceAttack, "fw_TraceAttack");
+	RegisterHamBots(Ham_AddPlayerItem, "fw_AddPlayerItem");
 	
 	// Message Ids
 	g_MsgScoreAttrib = get_user_msgid("ScoreAttrib");
@@ -531,8 +603,6 @@ public plugin_init()
 	g_msg_health = CreateHudSyncObj();
 	
 	// Commands
-	register_clcmd("chooseteam", "clcmd_changeteam");
-	register_clcmd("jointeam",  "clcmd_changeteam");
 	register_clcmd("say /humans", "clcmd_humans");
 	register_clcmd("say /zombies", "clcmd_zombies");
 	register_clcmd("say /first", "clcmd_nominee");
@@ -647,28 +717,6 @@ public client_infochanged(id)
 ||--------------------[ Commands ]------------------------||
 ||::::::::::::::::::::::::::::::::::::::::::::::::::::::::||
 \*========================================================*/
-
-// Prevents players from changing teams during the game
-public clcmd_changeteam(id)
-{
-	// Check if the player is connected
-	if(!BIT_CHECK(g_bitConnected, id))
-	{
-		return PLUGIN_HANDLED;
-	}
-	
-	// Get user team
-	static CsTeams:team;
-	team = cs_get_user_team(id);
-	
-	// Allow team change only for spectators or unassigned players
-	if(team == CS_TEAM_SPECTATOR || team == CS_TEAM_UNASSIGNED)
-	{
-		return PLUGIN_CONTINUE;
-	}
-	
-	return PLUGIN_HANDLED;
-}
 
 // Handles nomination to be first zombie
 public clcmd_nominee(id)
@@ -1015,9 +1063,40 @@ public fw_PlayerSpawnPost(id)
 	// The player has spawned
 	BIT_SET(g_bitAlive, id);
 	
-	// Turn player into human
-	set_task(0.1, "task_make_human", id);
-} 
+	// Check if round has started
+	new bool:round_started = (!g_newround && g_selected_firstzombie);
+	
+	// If round didn't start
+	if(!round_started)
+	{
+		// Turn player into human
+		set_task(0.1, "task_make_human", id);
+		g_RequestedSpawnType[id] = -1;
+		return;
+	}
+	
+	// Round started: verify if we have a pendient respawn request
+	new requested = g_RequestedSpawnType[id];
+	if(requested != -1)
+	{
+		// Reset flag
+		g_RequestedSpawnType[id] = -1;
+		switch(requested)
+		{
+			case 1: task_infect_user(id, 0, 0);   // zombie normal
+			case 2: // super zombie
+			{
+				task_infect_user(id, 0, 1);
+				set_user_health(id, (g_cached_superzombie_health * 25) / 100);
+			}
+			default: task_make_human(id);	// Human
+		}
+		return;
+	}
+	
+	// No request: just set class whether if player was zombie or human
+	(BIT_CHECK(g_bitZombie, id)) ? task_infect_user(id, 0, 0) : task_make_human(id);
+}
 
 // Event when a player is killed
 public fw_PlayerKilled(victim, attacker, shouldgib)
@@ -1075,17 +1154,13 @@ public fw_TakeDamage(victim, inflictor, attacker, Float:damage, dmgbits)
 	// Attacker is human
 	if(BIT_CHECK(g_bitZombie, victim) && BIT_CHECK(g_bitHuman, attacker))
 	{
-		// Super zombie ignores armor multiplier
-		if(!BIT_CHECK(g_bitSuperZombie, victim))
-		{
-			damage *= g_cached_zombie_armor;
-			SetHamParamFloat(4, damage);
-		}
+		damage *= g_cached_zombie_armor;
+		SetHamParamFloat(4, damage);
 		return HAM_IGNORED;
 	}
 	
 	// Attacker is zombie
-	if(BIT_CHECK(g_bitZombie, attacker) && BIT_CHECK(g_bitHuman, victim))
+	if((BIT_CHECK(g_bitZombie, attacker) || BIT_CHECK(g_bitSuperZombie, attacker)) && BIT_CHECK(g_bitHuman, victim))
 	{
 		// If there's only 1 human, no infection allowed
 		if(HumansCount() <= 1)
@@ -1109,6 +1184,13 @@ public fw_TakeDamage(victim, inflictor, attacker, Float:damage, dmgbits)
 			// Play last human sound if needed
 			task_last_team_chant(2);
 			return HAM_SUPERCEDE;
+		}
+		// Attacker is super zombie that does NOT infect (cvar off)
+		else if(BIT_CHECK(g_bitSuperZombie, attacker) && BIT_CHECK(g_bitHuman, victim))
+		{
+			// Lethal damage
+			SetHamParamFloat(4, 250.0);
+			return HAM_IGNORED;
 		}
 		// If infection fails but there are still more than 1 human
 		else 
@@ -1196,14 +1278,14 @@ public task_zombie_chant()
 	
 	for(new id = 1; id <= g_maxplayers; id++)
 	{
-		if(!is_valid_player_alive(id) || !BIT_CHECK(g_bitZombie, id))
+		if(!is_valid_player_alive(id) || (!BIT_CHECK(g_bitZombie, id) && !BIT_CHECK(g_bitSuperZombie, id)))
 		{
 			continue;
 		}
 		
 		switch(status)
 		{
-			case 0: emit_sound(id, CHAN_VOICE, zombie_chants[random_num(0, sizeof(zombie_chants)-1)], VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
+			case 0: emit_sound(id, CHAN_VOICE, zombie_chants[random_num(0, sizeof(zombie_chants) - 1)], VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
 			case 1: emit_sound(id, CHAN_VOICE, lasthumanchant, VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
 			case 2: emit_sound(id, CHAN_VOICE, lastzombiechant, VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
 			case 3: emit_sound(id, CHAN_VOICE, (random_num(1,8) % 2) ? lasthumanchant : lastzombiechant, VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
@@ -1228,7 +1310,7 @@ public task_last_team_chant(team)
 	
 	for(new id = 1; id <= g_maxplayers; id++)
 	{
-		if(!is_valid_player_alive(id) || !BIT_CHECK(g_bitZombie, id))
+		if(!is_valid_player_alive(id) || (!BIT_CHECK(g_bitZombie, id) && !BIT_CHECK(g_bitSuperZombie, id)))
 		{
 			continue;
 		}
@@ -1246,8 +1328,8 @@ public task_last_team_chant(team)
 // Begin task to show player information periodically
 public task_player_infos()
 {
-	// Schedule the task to run every 5 seconds, 6 times
-	set_task(5.0, "task_show_infos", _, _, _, "a", 6);
+	// Schedule the task to run every 2 seconds, 15 times
+	set_task(2.0, "task_show_infos", _, _, _, "a", 15);
 }
 
 // Task to show player count information
@@ -1279,11 +1361,11 @@ public task_show_infos()
 		// If the player is dead, check if they are not a spectator or unassigned
 		// If so, increment deadplayers counter
 		// Otherwise, increment spectators counter
-		BIT_CHECK(g_bitAlive, id) ? (BIT_CHECK(g_bitHuman, id) ? humans++ : BIT_CHECK(g_bitZombie, id) ? zombies++ : 0) : (team != CS_TEAM_SPECTATOR && team != CS_TEAM_UNASSIGNED ? deadplayers++ : spectators++);
+		BIT_CHECK(g_bitAlive, id) ? (BIT_CHECK(g_bitHuman, id) ? humans++ : (BIT_CHECK(g_bitZombie, id) || BIT_CHECK(g_bitSuperZombie, id)) ? zombies++ : 0) : (team != CS_TEAM_SPECTATOR && team != CS_TEAM_UNASSIGNED ? deadplayers++ : spectators++);
 	}
 	
 	// Display the HUD message with all counts
-	ShowSyncHudMsg(0, g_msg_sync, "%L", LANG_PLAYER, "HUD_PLAYERCOUNT", humans, zombies, g_human_round_kills_count, g_zombie_round_kills_count, deadplayers, spectators, get_playersnum());
+	show_hudmessage(0, "%L", LANG_PLAYER, "HUD_PLAYERCOUNT", humans, zombies, g_human_round_kills_count, g_zombie_round_kills_count, deadplayers, spectators, get_playersnum());
 }
 
 // Global player count function
@@ -1303,7 +1385,7 @@ public CountPlayers(CountType:count_type)
 		{
 			count++;
 		}
-		else if(count_type == COUNT_ZOMBIES && BIT_CHECK(g_bitZombie, id))
+		else if(count_type == COUNT_ZOMBIES && (BIT_CHECK(g_bitZombie, id) || BIT_CHECK(g_bitSuperZombie, id)))
 		{
 			 count++;
 		}
@@ -1412,8 +1494,8 @@ public GetRandomAliveCount(n, nominee)
 // Display scores task
 public task_display_score()
 {
-	set_hudmessage(255, 165, 0, -1.0, 0.17, 1, 0.0, 3.0, 2.0, 1.0, -1);
-	ShowSyncHudMsg(0, g_msg_sync, "%L", LANG_PLAYER, "HUD_SCORE", g_score_zombies, g_score_humans);
+	set_dhudmessage(255, 165, 0, -1.0, 0.17, 1, 0.0, 3.0, 2.0, 1.0);
+	show_dhudmessage(0, "%L", LANG_PLAYER, "HUD_SCORE", g_score_zombies, g_score_humans);
 }
 
 public freeze_players()
@@ -1448,14 +1530,15 @@ stock bool:is_valid_player_alive(id)
 // Check if infection is allowed based on multiple conditions
 stock bool:allow_infection(attacker, victim) 
 {
-	// Quick checks first
-	if(!BIT_CHECK(g_bitZombie, attacker) || !BIT_CHECK(g_bitHuman, victim))
+	// If the attacker is not human (normal zombie or super zombie with permission) or the victim is not human, there is no infection.
+	new bool:attacker_can_infect = BIT_CHECK(g_bitZombie, attacker) || (g_cached_superzombie_infect && BIT_CHECK(g_bitSuperZombie, attacker));
+	if(!attacker_can_infect || !BIT_CHECK(g_bitHuman, victim))
 	{
 		return false;
 	}
 
 	// Cache user button state
-	new buttons = get_user_button(attacker);
+	new buttons = entity_get_int(attacker, EV_INT_button); //get_user_button(attacker);
 
 	// Must be primary attack and not secondary
 	if(!(buttons & IN_ATTACK) || (buttons & IN_ATTACK2))
@@ -1542,19 +1625,18 @@ public bool:check_players()
 	new sum = alive + dead;
 	new bool:restart_needed = (!g_enough_players && sum >= g_cached_min_players);
 	
-	log_amx("[ZM] +--------------------------------------------------+");
-	log_amx("[ZM] |              CHECK PLAYERS STATUS               |");
-	log_amx("[ZM] +--------------------------------------------------+");
-	log_amx("[ZM] | Alive players: %-33d |", alive);
-	log_amx("[ZM] | Dead players: %-33d |", dead);
-	log_amx("[ZM] | Total players: %-33d |", sum);
-	log_amx("[ZM] | Min required: %-33d |", g_cached_min_players);
-	log_amx("[ZM] | Restart needed : %-33s |", restart_needed ? "YES" : "NO");
-	log_amx("[ZM] +--------------------------------------------------+");
+	log_amx("[ZM] +----------------------------------+");
+	log_amx("[ZM] |        CHECK PLAYERS STATUS      |");
+	log_amx("[ZM] +----------------------------------+");
+	log_amx("[ZM] | Alive players: %d", alive);
+	log_amx("[ZM] | Dead players: %d", dead);
+	log_amx("[ZM] | Total players: %d", sum);
+	log_amx("[ZM] | Min required: %d", g_cached_min_players);
+	log_amx("[ZM] | Restart needed: %s", restart_needed ? "YES" : "NO");
+	log_amx("[ZM] +----------------------------------+");
 	
 	return restart_needed;
 }
-
 
 // Check if the player who left was the last human or zombie and recover the round if needed
 public task_check_round(player_left)
@@ -1714,6 +1796,7 @@ public cache_cvars()
 	g_cached_zombie_armor = get_pcvar_float(cvar_zombie_armor);
 	g_cached_zombie_brainhealth = get_pcvar_num(cvar_zombie_brainhealth);
 	g_cached_firstzombie_health = get_pcvar_num(cvar_firstzombie_health);
+	g_cached_silent_firstzombie = get_pcvar_num(cvar_silent_firstzombie);
 	g_cached_zombie_health = get_pcvar_num(cvar_zombie_health);
 	g_cached_zombie_speed = get_pcvar_float(cvar_zombie_speed);
 	g_cached_zombie_gravity = get_pcvar_float(cvar_zombie_gravity);
@@ -1722,8 +1805,10 @@ public cache_cvars()
 	g_cached_superzombie_gravity = get_pcvar_float(cvar_superzombie_gravity);
 	g_cached_superzombie_chance = get_pcvar_num(cvar_superzombie_chance);
 	g_cached_superzombie_enabled = get_pcvar_num(cvar_superzombie_enabled);
+	g_cached_superzombie_infect = get_pcvar_num(cvar_superzombie_infect);
 	g_cached_multi_chance = get_pcvar_num(cvar_multi_chance);
 	g_cached_multi_min_players = get_pcvar_num(cvar_multi_min_players);
+	g_cached_multi_enabled = get_pcvar_num(cvar_multi_enabled);
 
 	// Cvars Humans
 	g_cached_human_health = get_pcvar_num(cvar_human_health);
@@ -1736,14 +1821,14 @@ public cache_cvars()
 bool:is_primary_weapon_allowed(index)
 {
 	// Safety: prevent out of bounds (though caller should ensure it)
-	if(index < 0 || index >= sizeof(g_primary_cvar))
+	if(index < 0 || index >= sizeof(cvar_primaries))
 	{
 		return false;
 	}
 	
 	// If the cvar exists and is non-zero, the weapon is allowed.
-	// (g_primary_cvar[index] is a pointer; get_pcvar_num returns 0 or 1)
-	return (g_primary_cvar[index] && get_pcvar_num(g_primary_cvar[index]) != 0);
+	// (cvar_primaries[index] is a pointer; get_pcvar_num returns 0 or 1)
+	return (cvar_primaries[index] && get_pcvar_num(cvar_primaries[index]) != 0);
 }
 
 bool:is_weapon_allowed_by_cvars(weaponid)
@@ -1788,6 +1873,7 @@ stock reset_vars(id)
 	BIT_CLEAR(g_bitSuperZombie, id);
 	BIT_CLEAR(g_bitZombieNominee, id);
 	BIT_CLEAR(g_bitHasGlow, id);
+	g_RequestedSpawnType[id] = -1;
 	
 	// Reset connection and first-time flags
 	BIT_CLEAR(g_bitFirstConnection, id);
@@ -1796,54 +1882,55 @@ stock reset_vars(id)
 // Drop primary/secondary weapons
 stock drop_weapons(id, dropwhat)
 {
-	// Get user weapons
-	new weapons[32], num_weapons, index, index2, weaponid, weaponid2, dropammo = true;
+	new weapons[32], num_weapons, weaponname[32], weapon_entity, weaponid, i, j;
 	get_user_weapons(id, weapons, num_weapons);
 	
-	// Weapon bitsums
-	const PRIMARY_WEAPONS_BIT_SUM = (1<<CSW_SCOUT)|(1<<CSW_XM1014)|(1<<CSW_MAC10)|(1<<CSW_AUG)|(1<<CSW_UMP45)|(1<<CSW_SG550)|(1<<CSW_GALIL)|(1<<CSW_FAMAS)|(1<<CSW_AWP)|(1<<CSW_MP5NAVY)|(1<<CSW_M249)|(1<<CSW_M3)|(1<<CSW_M4A1)|(1<<CSW_TMP)|(1<<CSW_G3SG1)|(1<<CSW_SG552)|(1<<CSW_AK47)|(1<<CSW_P90)
-	const SECONDARY_WEAPONS_BIT_SUM = (1<<CSW_P228)|(1<<CSW_ELITE)|(1<<CSW_FIVESEVEN)|(1<<CSW_USP)|(1<<CSW_GLOCK18)|(1<<CSW_DEAGLE)	
+	static const g_ammo_ids[] = { -1, 9, -1, 2, 12, 5, 14, 6, 4, 13, 10, 7, 6, 4, 4, 4, 6, 10, 1, 10, 3, 5, 4, 10, 2, 11, 8, 4, 2, -1, 7 };
+	static const PRIMARY_BITS = (1<<CSW_SCOUT)|(1<<CSW_XM1014)|(1<<CSW_MAC10)|(1<<CSW_AUG)|(1<<CSW_UMP45)|(1<<CSW_SG550)|(1<<CSW_GALIL)|(1<<CSW_FAMAS)|(1<<CSW_AWP)|(1<<CSW_MP5NAVY)|(1<<CSW_M249)|(1<<CSW_M3)|(1<<CSW_M4A1)|(1<<CSW_TMP)|(1<<CSW_G3SG1)|(1<<CSW_SG552)|(1<<CSW_AK47)|(1<<CSW_P90);
+	static const SECONDARY_BITS = (1<<CSW_P228)|(1<<CSW_ELITE)|(1<<CSW_FIVESEVEN)|(1<<CSW_USP)|(1<<CSW_GLOCK18)|(1<<CSW_DEAGLE);
+	new mask = (dropwhat == 1) ? PRIMARY_BITS : SECONDARY_BITS;
 	
-	// Loop through them and drop primaries or secondaries
-	for(index = 0; index < num_weapons; index++)
+	for(i = 0; i < num_weapons; i++)
 	{
-		// Prevent re-indexing the array
-		weaponid = weapons[index];
-		
-		if((dropwhat == 1 && ((1<<weaponid) & PRIMARY_WEAPONS_BIT_SUM)) || (dropwhat == 2 && ((1<<weaponid) & SECONDARY_WEAPONS_BIT_SUM)))
+		weaponid = weapons[i];
+		if(!((1 << weaponid) & mask))
 		{
-			// Get weapon entity
-			new wname[32], weapon_ent;
-			get_weaponname(weaponid, wname, charsmax(wname));
-			weapon_ent = find_ent_by_owner(-1, wname, id);
-			
-			// Check if another weapon uses same type of ammo first
-			for(index2 = 0; index2 < num_weapons; index2++)
-			{
-				// Prevent re-indexing the array
-				weaponid2 = weapons[index2];
-				
-				// Only check weapons that we are not going to drop
-				if((dropwhat == 1 && ((1<<weaponid2) & SECONDARY_WEAPONS_BIT_SUM)) || (dropwhat == 2 && ((1<<weaponid2) & PRIMARY_WEAPONS_BIT_SUM)))
-				{
-					if(g_ammo_ids[weaponid2] == g_ammo_ids[weaponid])
-					{
-						dropammo = false;
-					}
-				}
-			}
-			
-			// Drop weapon's BP Ammo too?
-			if(dropammo)
-			{
-				// Hack: store weapon bpammo on PEV_ADDITIONAL_AMMO
-				entity_set_int(weapon_ent, ADDITIONAL_AMMO, cs_get_user_bpammo(id, weaponid));
-				cs_set_user_bpammo(id, weaponid, 0)
-			}
-			
-			// Player drops the weapon
-			engclient_cmd(id, "drop", wname);
+			continue;
 		}
+		
+		// Get weapon entity
+		get_weaponname(weaponid, weaponname, charsmax(weaponname));
+		weapon_entity = find_ent_by_owner(-1, weaponname, id);
+		if(!weapon_entity)
+		{
+			continue;
+		}
+		
+		// Check if another weapon uses same type of ammo first
+		new bool:drop_ammo = true;
+		for(j = 0; j < num_weapons; j++)
+		{
+			if(i == j)
+			{
+				continue;
+			}
+			
+			if(g_ammo_ids[weapons[j]] == g_ammo_ids[weaponid])
+			{
+				drop_ammo = false;
+				break;
+			}
+		}
+		
+		// Drop weapon's BP Ammo too?
+		if(drop_ammo)
+		{
+			entity_set_int(weapon_entity, ADDITIONAL_AMMO, cs_get_user_bpammo(id, weaponid));
+			cs_set_user_bpammo(id, weaponid, 0);
+		}
+		
+		// Player drops the weapon
+		engclient_cmd(id, "drop", weaponname);
 	}
 }
 
@@ -1898,6 +1985,39 @@ stock precache_player_models(const models[][], count, dest[][], max_name_len, co
 	}
 }
 
+// Safe precache for knife models
+stock precache_knife_models(const original[], const fallback[], output[], len)
+{
+	// If original path is empty, just use the fallback (which may be empty)
+	if(original[0] == 0)
+	{
+		if(fallback[0])
+		{
+			precache_model(fallback);
+		}
+		copy(output, len, fallback);
+		log_amx("[ZM] Knife model not found: %s. Using fallback: %s", original, fallback);
+		return;
+	}
+	
+	// If original file exists, use it
+	if(file_exists(original, true))
+	{
+		precache_model(original);
+		copy(output, len, original);
+	}
+	else
+	{
+		// Original missing: use fallback
+		if(fallback[0])
+		{
+			precache_model(fallback);
+		}
+		copy(output, len, fallback);
+		log_amx("[ZM] Knife model not found: %s. Using fallback: %s", original, fallback);
+	}
+}
+
 stock PlaySound(id, const sound[])
 {
 	(equal(sound[strlen(sound)-4], ".mp3")) ? client_cmd(id == 0 ? 0 : id, "mp3 play ^"sound/%s^"", sound) : client_cmd(id == 0 ? 0 : id, "spk ^"sound/%s^"", sound);
@@ -1922,8 +2042,8 @@ public task_select_a_zombie()
 		g_enough_players = false;
 		
 		// Show message
-		set_hudmessage(255, 100, 0, -1.0, 0.4, 1, 6.0, 1.0, 0.1, 0.2, -1);
-		ShowSyncHudMsg(0, g_msg_sync, "%L", LANG_PLAYER, "HUD_NOT_ENOUGH_PLAYERS", min_players);
+		set_hudmessage(255, 100, 0, -1.0, 0.4, 1, 6.0, 1.0, 0.1, 0.2, 3);
+		show_hudmessage(0, "%L", LANG_PLAYER, "HUD_NOT_ENOUGH_PLAYERS", min_players);
 		
 		// Check if the sum reaches the minimum to schedule a restart
 		new deadcount = GetDeadCount();
@@ -1956,16 +2076,14 @@ public task_select_a_zombie()
 	if(g_cached_superzombie_enabled)
 	{
 		// Rolls for Super Zombie using its chance
-		new roll = random_num(1, g_cached_superzombie_chance);
-		
-		if(roll == 1)
+		if(random_num(1, g_cached_superzombie_chance) == 1)
 		{
 			mode = MODE_SUPER; // Super Zombie
 		}
 		else
 		{
 			// Roll for Multiple Infection
-			if(random_num(1, g_cached_multi_chance) == 1 && alive_count >= g_cached_multi_min_players)
+			if(random_num(1, g_cached_multi_chance) == 1 && alive_count >= g_cached_multi_min_players && g_cached_multi_enabled)
 			{
 				mode = MODE_MULTI;
 			}
@@ -1974,7 +2092,7 @@ public task_select_a_zombie()
 	else
 	{
 		// Super Zombie disabled, only Normal or Multiple Infection
-		if(random_num(1, g_cached_multi_chance) == 1 && alive_count >= g_cached_multi_min_players)
+		if(random_num(1, g_cached_multi_chance) == 1 && alive_count >= g_cached_multi_min_players && g_cached_multi_enabled)
 		{
 			mode = MODE_MULTI;
 		}
@@ -2027,7 +2145,6 @@ public start_infection_mode()
 	show_hudmessage(0, "%L", LANG_PLAYER, "HUD_FIRSTZOMBIE", g_playername[first_zombie]);
 	
 	task_infect_user(first_zombie, 0, 0);
-	
 	client_print(0, print_center, "%L", LANG_PLAYER, "ZOMBIES_COMING");
 	
 	// Force all alive non-zombie players to CT
@@ -2074,7 +2191,6 @@ public start_super_zombie_mode()
 		return;
 	}
 	
-	BIT_SET(g_bitFirstZombie, first_zombie);
 	g_selected_firstzombie = true;
 	
 	set_hudmessage(100, 255, 0, -1.0, 0.17, 1, 6.0, 8.0);
@@ -2087,7 +2203,7 @@ public start_super_zombie_mode()
 	
 	for(new i = 1; i <= g_maxplayers; i++)
 	{
-		if(!BIT_CHECK(g_bitAlive, i) || BIT_CHECK(g_bitZombie, i))
+		if(!BIT_CHECK(g_bitAlive, i) || BIT_CHECK(g_bitSuperZombie, i))
 		{
 			continue;
 		}
@@ -2122,7 +2238,7 @@ public start_multi_infection_mode()
 	// Play entry sound for all
 	PlaySound(0, superappears);
 	
-	// Randomly select max_zombies players and turn them into zombiES
+	// Randomly select max_zombies players and turn them into zombies
 	while(assigned < max_zombies)
 	{
 		// Pick random alive player
@@ -2142,7 +2258,7 @@ public start_multi_infection_mode()
 	// Loop through all alive non-zombie players and force them to be CTs
 	for(id = 1; id <= g_maxplayers; id++)
 	{
-		if(!BIT_CHECK(g_bitAlive, id)|| BIT_CHECK(g_bitZombie, id))
+		if(!BIT_CHECK(g_bitAlive, id) || BIT_CHECK(g_bitZombie, id))
 		{
 			continue;
 		}
@@ -2190,14 +2306,17 @@ public task_make_human(id)
 	
 	// Assign a random player model
 	(g_iValidHumanCount > 0) ? cs_set_user_model(id, g_ValidHumanModels[random(g_iValidHumanCount)]) : cs_set_user_model(id, "urban"); 
-	cs_set_player_view_model(id, CSW_KNIFE, HumanKnife);
-	cs_reset_player_weap_model(id, CSW_KNIFE);
+	
+	// Assign knife models
+	cs_set_player_weap_model(id, CSW_KNIFE, (g_ValidHumanPKnife[0] ? g_ValidHumanPKnife : "models/p_knife.mdl"));
+	cs_set_player_view_model(id, CSW_KNIFE, (g_ValidHumanVKnife[0] ? g_ValidHumanVKnife : "models/v_knife.mdl"));
 	
 	// Set the human's health, gravity, speed
 	set_user_health(id, g_cached_human_health);
 	set_user_gravity(id, g_cached_human_gravity);
 	set_user_maxspeed(id, g_cached_human_speed);
-		
+	set_user_footsteps(id, 0);
+	
 	// Remove glow if player was super zombie before
 	if(BIT_CHECK(g_bitHasGlow, id))
 	{
@@ -2234,22 +2353,29 @@ public task_make_zombie(id, superzombie)
 	
 	// Mark player as zombie (clear human flag)
 	BIT_CLEAR(g_bitHuman, id);
-	BIT_SET(g_bitZombie, id);
 	
-	// Set super zombie flag if needed
-	superzombie ? BIT_SET(g_bitSuperZombie, id) : BIT_CLEAR(g_bitSuperZombie, id);
+	// --- Clear previous zombie flags before setting new ones ---
+	// This prevents leftover attributes (e.g., pain sounds, footstep flags, or class-specific states) 
+	// from carrying over when a zombie is transformed into a super zombie via admin menu or other means.
+	BIT_CLEAR(g_bitZombie, id);
+	BIT_CLEAR(g_bitSuperZombie, id);
+	
+	// Assign the appropriate zombie type flag.
+	superzombie ? BIT_SET(g_bitSuperZombie, id) : BIT_SET(g_bitZombie, id);
 	
 	// --- Set team and model ---
 	cs_set_player_team(id, CS_TEAM_T);
-	superzombie ? (g_iValidSuperCount > 0) ? cs_set_user_model(id, g_ValidSuperModels[random(g_iValidSuperCount)]) : cs_set_user_model(id, "zombie") : (g_iValidZombieCount > 0) ? cs_set_user_model(id, g_ValidZombieModels[random(g_iValidZombieCount)]) : cs_set_user_model(id, "zombie");
+	superzombie ? (g_iValidSuperCount > 0 ? cs_set_user_model(id, g_ValidSuperModels[random(g_iValidSuperCount)]) : cs_set_user_model(id, "zombie")) : (BIT_CHECK(g_bitFirstZombie, id) ? (g_iValidFirstZombieCount > 0 ? cs_set_user_model(id, g_ValidFirstZombieModels[random(g_iValidFirstZombieCount)]) : cs_set_user_model(id, "zombie")) : (g_iValidZombieCount > 0 ? cs_set_user_model(id, g_ValidZombieModels[random(g_iValidZombieCount)]) : cs_set_user_model(id, "zombie")));
 	
 	// --- Strip weapons and give knife ---
 	drop_weapons(id, 1);
 	drop_weapons(id, 2);
 	strip_user_weapons(id);
 	give_item(id, "weapon_knife");
-	cs_set_player_weap_model(id, CSW_KNIFE, "");
-	cs_set_player_view_model(id, CSW_KNIFE, superzombie ? SuperKnife : ZombieKnife);
+	
+	// Assign knife models for zombies
+	cs_set_player_weap_model(id, CSW_KNIFE, superzombie ? (g_ValidSuperPKnife[0] ? g_ValidSuperPKnife : "") : (BIT_CHECK(g_bitFirstZombie, id) ? (g_ValidFirstZombiePKnife[0] ? g_ValidFirstZombiePKnife : "") : (g_ValidZombiePKnife[0] ? g_ValidZombiePKnife : "")));
+	cs_set_player_view_model(id, CSW_KNIFE, superzombie ? (g_ValidSuperVKnife[0] ? g_ValidSuperVKnife : "models/v_knife.mdl") :(BIT_CHECK(g_bitFirstZombie, id) ? (g_ValidFirstZombieVKnife[0] ? g_ValidFirstZombieVKnife : "models/v_knife.mdl") : (g_ValidZombieVKnife[0] ? g_ValidZombieVKnife : "models/v_knife.mdl")));
 	
 	// --- Remove flashlight if active ---
 	new effects = entity_get_int(id, EV_INT_effects);
@@ -2263,36 +2389,27 @@ public task_make_zombie(id, superzombie)
 	}
 	
 	// --- Set stats (health, gravity, speed) ---
-	new health, Float:gravity, Float:speed;
+	set_user_health(id, superzombie ? g_cached_superzombie_health : (BIT_CHECK(g_bitFirstZombie, id) ? g_cached_firstzombie_health : g_cached_zombie_health));
+	set_user_gravity(id, superzombie ? g_cached_superzombie_gravity : g_cached_zombie_gravity);
+	set_user_maxspeed(id, superzombie ? g_cached_superzombie_speed : g_cached_zombie_speed);
+	cs_set_user_armor(id, 0, CS_ARMOR_NONE);
 	
+	// Super zombie glow effect
 	if(superzombie)
 	{
-		health = g_cached_superzombie_health;
-		gravity = g_cached_superzombie_gravity;
-		speed = g_cached_superzombie_speed;
-		
-		// Super zombie glow effect
 		set_user_rendering(id, kRenderFxGlowShell, 0, 255, 0, kRenderNormal, 5);
 		BIT_SET(g_bitHasGlow, id);
 	}
-	else
+	// Infection sound for non-first zombies
+	else if(!BIT_CHECK(g_bitFirstZombie, id))
 	{
-		// Normal zombie: first zombie gets extra health
-		health = BIT_CHECK(g_bitFirstZombie, id) ? g_cached_firstzombie_health : g_cached_zombie_health;
-		gravity = g_cached_zombie_gravity;
-		speed = g_cached_zombie_speed;
-		
-		// Infection sound for non-first zombies
-		if(!BIT_CHECK(g_bitFirstZombie, id))
-		{
-			emit_sound(id, CHAN_AUTO, zombie_infect[random_num(0, sizeof(zombie_infect) - 1)], VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
-		}
+		emit_sound(id, CHAN_AUTO, zombie_infect[random_num(0, sizeof(zombie_infect) - 1)], VOL_NORM, ATTN_NORM, 0, PITCH_NORM);
 	}
-	
-	set_user_gravity(id, gravity);
-	set_user_maxspeed(id, speed);
-	set_user_health(id, health);
-	cs_set_user_armor(id, 0, CS_ARMOR_NONE);
+	// Apply silent footsteps for first zombie if enabled
+	else if(g_cached_silent_firstzombie && BIT_CHECK(g_bitFirstZombie, id))
+	{
+		set_user_footsteps(id, 1);
+	}
 	
 	// --- Final messages and night vision ---
 	client_print_color(id, print_team_default, "^4[ZM] ^1%L", LANG_PLAYER, superzombie ? "INFO_SUPERZOMBIE" : "INFO_ZOMBIE");
@@ -2433,6 +2550,24 @@ public grant_nades(id)
 public native_zmod_is_active()
 {
 	return get_pcvar_num(cvar_enabled);
+}
+
+// Native: zmod_request_spawn_type
+public native_zmod_request_spawn_type(id, type)
+{
+	if(!is_valid_player(id))
+	{
+		log_error(AMX_ERR_NATIVE, "[ZM] Invalid player %d", id);
+		return -1;
+	}
+	
+	if(type >= -1 && type <= 2)
+	{
+		g_RequestedSpawnType[id] = type;
+		return 1;
+	}
+	
+	return 0;
 }
 
 // Native: zmod_is_weapon_allowed
@@ -2652,22 +2787,11 @@ public native_zmod_force_transform_super_zombie(id)
 // Determines whether to restore saved weapons or open the weapon menu
 public is_autorepick_active(id)
 {
-	if(BIT_CHECK(g_bitAutoRepickWeps, id))
-	{
-		// Auto repick is enabled, restore saved weapons to current
-		g_primary_weapon[id] = g_primary_saved[id];
-		g_secondary_weapon[id] = g_secondary_saved[id];
-		g_grenades[id] = g_grenades_saved[id];
-		return true;
-	}
-	else
-	{
-		// Auto repick disabled, clear current weapon selections
-		g_primary_weapon[id] = 0;
-		g_secondary_weapon[id] = 0;
-		g_grenades[id] = 0;
-		return false;
-	}
+	new active = BIT_CHECK(g_bitAutoRepickWeps, id);
+	g_primary_weapon[id] = active ? g_primary_saved[id] : 0;
+	g_secondary_weapon[id] = active ? g_secondary_saved[id] : 0;
+	g_grenades[id] = active ? g_grenades_saved[id] : 0;
+	return active;
 }
 
 // Handles the task of opening the weapon menu or restoring the player's saved loadout
@@ -2921,7 +3045,7 @@ public weapon_menu_pistols(id)
 	for(new i; i < sizeof(g_secondary_weapons); i++)
 	{
 		// Choose between alternate name or default name
-		(get_pcvar_num(cvar_weapon_alt_names)) ? copy(name, charsmax(name), g_secondary_weapons[i][AltName]) : copy(name, charsmax(name), g_secondary_weapons[i][WeaponName]);
+		g_cached_weapon_alt_names ? copy(name, charsmax(name), g_secondary_weapons[i][AltName]) : copy(name, charsmax(name), g_secondary_weapons[i][WeaponName]);
 
 		// Add weapon entry to menu
 		len += formatex(menu[len], charsmax(menu)-len, "\r%d. \w%s^n", i+1, name);
@@ -3109,18 +3233,26 @@ public zm_menu_main(id)
 	}
 	
 	new menuid = menu_create(fmt("%L\r", id, "MENU_TITLE"), "menu_main_handler");
+	static data[2];
 	
-	menu_additem(menuid, fmt("%L", id, "MENU_HELP"), "1");
-	menu_additem(menuid, fmt("%L", id, "MENU_ABOUT"), "2");
+	data[0] = 1;
+	menu_additem(menuid, fmt("%L", id, "MENU_HELP"), data);
+	
+	data[0] = 2;
+	menu_additem(menuid, fmt("%L", id, "MENU_ABOUT"), data);
 	
 	menu_addblank2(menuid);
 	
-	menu_additem(menuid, fmt("%L", id, "MENU_REPICK_WEAPONS"), "3");
+	data[0] = 3;
+	menu_additem(menuid, fmt("%L", id, "MENU_REPICK_WEAPONS"), data);
 	
 	menu_addblank2(menuid);
 	
-	menu_additem(menuid, fmt("%L", id, "MENU_CONTACT"), "4");
-	menu_additem(menuid, fmt("%L", id, "MENU_JOIN_SPECS"), "5");
+	data[0] = 4;
+	menu_additem(menuid, fmt("%L", id, "MENU_CONTACT"), data);
+	
+	data[0] = 5;
+	menu_additem(menuid, fmt("%L", id, "MENU_JOIN_SPECS"), data);
 	
 	//menu_setprop(menuid, MPROP_BACKNAME, fmt("%L", id, "MENU_BACK"));
 	//menu_setprop(menuid, MPROP_NEXTNAME, fmt("%L", id, "MENU_NEXT"));
@@ -3153,9 +3285,9 @@ public menu_main_handler(id, menu, item)
 	
 	switch(data[0])
 	{
-		case '1': zm_menu_help(id); // Zombie Mod Help
-		case '2': zm_show_motd(id, 5); // About Zombie Mod
-		case '3': // Repick Weapons
+		case 1: zm_menu_help(id); // Zombie Mod Help
+		case 2: zm_show_motd(id, 5); // About Zombie Mod
+		case 3: // Repick Weapons
 		{
 			if(BIT_CHECK(g_bitAutoRepickWeps, id))
 			{
@@ -3171,8 +3303,8 @@ public menu_main_handler(id, menu, item)
 				zm_menu_main(id);
 			}
 		}
-		case '4': zm_show_motd(id, 6); // Contact Info
-		case '5': // Join Spectators
+		case 4: zm_show_motd(id, 6); // Contact Info
+		case 5: // Join Spectators
 		{
 			if(!BIT_CHECK(g_bitAlive, id))
 			{
@@ -3439,7 +3571,7 @@ public menu_switch_handler(id, menu, item)
 	set_task(17.0, enable ? "play_enable_sound" : "play_disable_sound");
 	
 	// Schedule restart task to make changes take effect
-	set_task(29.0, "task_restart_map");
+	set_task(25.5, "task_restart_map");
 	
 	menu_destroy(menu);
 	return PLUGIN_HANDLED;
@@ -3453,7 +3585,7 @@ public play_announce_sound()
 public play_enable_sound()
 {
 	remove_task(983);
-	PlaySound(0, zombie_win[random_num(0, sizeof zombie_win - 1)]);
+	PlaySound(0, enable_sound);
 }
 
 public play_disable_sound()
