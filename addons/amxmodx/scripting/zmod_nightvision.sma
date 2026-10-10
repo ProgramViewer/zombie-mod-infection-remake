@@ -164,6 +164,10 @@ public zmod_user_cured(id)
 
 public fw_PlayerSpawnPost(id)
 {
+    BIT_CLEAR(g_bitNVisionActive, id);
+	BIT_CLEAR(g_bitNVisionEnabled, id);
+	set_user_gnvision(id, 0);
+
 	if(g_cached_nvgcustom)
 	{
 		remove_task(id+TASK_NIGHTVISION);
