@@ -15,8 +15,8 @@
 #define is_valid_player_connected(%1) (1 <= %1 && %1 <= 32 && is_user_connected(%1))
 #define is_valid_player_alive(%1) (1 <= %1 && %1 <= 32 && is_user_alive(%1))
 
-new g_bitNVisionActive;   // si tiene NVG disponible
-new g_bitNVisionEnabled;  // si está encendida en este momento
+new g_bitNVisionActive;  
+new g_bitNVisionEnabled; 
 new g_MsgNVGToggle;
 
 new cvar_nvgcustom;
