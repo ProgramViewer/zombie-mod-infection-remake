@@ -1,6 +1,6 @@
 ## Zombie Mod Infection Remake
 
-**Current Version:** 1.0  
+**Current Version:** 1.2  
 **Author:** ProgramViewer  
 **Licence:** GPL-3.0
 
