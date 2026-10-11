@@ -43,8 +43,8 @@ new g_menu_data[33][8]; // Store various menu pages per player
 // General globals
 // -------------------------
 new g_maxplayers; // Max players on the server
-new g_admin_transform_into; // Current transform action flag
-new g_admin_menu_info; // Current menu info
+new g_admin_transform_into[33]; // Current transform action flag
+new g_admin_menu_info[33]; // Current menu info
 new g_admin_menu[33]; // Store current menu id
 
 // -------------------------
@@ -303,6 +303,8 @@ public client_putinserver(id)
 	// Mark the player as connected
 	g_is_user_connected[id] = true;
 	g_is_user_alive[id] = false;
+	g_admin_transform_into[id] = 0;
+	g_admin_menu_info[id] = 0;
 	g_admin_menu[id] = 0;
 	
 	// Cache the player's name for later use
@@ -315,10 +317,19 @@ public client_disconnected(id)
 	// Clear flags
 	g_is_user_connected[id] = false;
 	g_is_user_alive[id] = false;
+	g_admin_transform_into[id] = 0;
+	g_admin_menu_info[id] = 0;
 	g_admin_menu[id] = 0;
 	
 	// Remove any tasks associated with the player
 	remove_task(id);
+}
+
+// Client user info changed forward
+public client_infochanged(id)
+{
+	// Cache player's name again if player changed it
+	get_user_name(id, g_playername[id], charsmax(g_playername[]));
 }
 
 // Command handler for opening the admin menu
@@ -378,7 +389,10 @@ public zm_admin_menu(id)
 	// Configure next, back and exit buttons
 	set_menu_nav(menuid, id);
 	
+	g_admin_transform_into[id] = 0;
+	g_admin_menu_info[id] = 0;
 	g_admin_menu[id] = menuid;
+	
 	menu_display(id, menuid, 0);
 }
 
@@ -410,42 +424,42 @@ public menu_admin_handler(id, menu, item)
 	{
 		case 1: // Transform into Human
 		{
-			g_admin_transform_into = ADMIN_TRANSFORM_HUMAN;
+			g_admin_transform_into[id] = ADMIN_TRANSFORM_HUMAN;
 			zm_player_list(id); 
 		}
 		case 2: // Transform into Zombie
 		{
-			g_admin_transform_into = ADMIN_TRANSFORM_ZOMBIE;
+			g_admin_transform_into[id] = ADMIN_TRANSFORM_ZOMBIE;
 			zm_player_list(id);
 		}
 		case 3: // Transform into Super Zombie
 		{
-			g_admin_transform_into = ADMIN_TRANSFORM_SUPERZOMBIE;
+			g_admin_transform_into[id] = ADMIN_TRANSFORM_SUPERZOMBIE;
 			zm_player_list(id);
 		}
 		case 4: // Human Settings
 		{
-			g_admin_menu_info = ADMIN_MENU_HUMAN_SETTINGS;
+			g_admin_menu_info[id] = ADMIN_MENU_HUMAN_SETTINGS;
 			zm_human_settings_menu(id);
 		}
 		case 5: // Zombie Settings
 		{
-			g_admin_menu_info = ADMIN_MENU_ZOMBIE_SETTINGS;
+			g_admin_menu_info[id] = ADMIN_MENU_ZOMBIE_SETTINGS;
 			zm_zombie_settings_menu(id);
 		}
 		case 6: // Global Settings
 		{
-			g_admin_menu_info = ADMIN_MENU_GLOBAL_SETTINGS;
+			g_admin_menu_info[id] = ADMIN_MENU_GLOBAL_SETTINGS;
 			zm_global_settings_menu(id); 
 		}
 		case 7: // Weapon Restrictions
 		{
-			g_admin_menu_info = ADMIN_MENU_WEAPON_RESTRICTIONS;
+			g_admin_menu_info[id] = ADMIN_MENU_WEAPON_RESTRICTIONS;
 			zm_weapon_restrictions_menu(id); 
 		}
 		case 8: // Nightvision Settings
 		{
-			g_admin_menu_info = ADMIN_MENU_NIGHTVISION_SETTINGS;
+			g_admin_menu_info[id] = ADMIN_MENU_NIGHTVISION_SETTINGS;
 			zm_nvg_settings_menu(id);
 		}
 	}
@@ -470,7 +484,7 @@ public zm_player_list(id)
 	new len = 0;
 	
 	// Add a dynamic title based on the desired admin action
-	switch(g_admin_transform_into)
+	switch(g_admin_transform_into[id])
 	{
 		case ADMIN_TRANSFORM_HUMAN: len += formatex(menu[len], charsmax(menu) - len, "%L", id, "MENU_TRANSFORM_HUMAN");
 		case ADMIN_TRANSFORM_ZOMBIE: len += formatex(menu[len], charsmax(menu) - len, "%L", id, "MENU_TRANSFORM_ZOMBIE");
@@ -524,7 +538,7 @@ public zm_player_list(id)
 	
 	// Determine the page to show based on transformation type
 	new page = 0;
-	switch(g_admin_transform_into)
+	switch(g_admin_transform_into[id])
 	{
 		case ADMIN_TRANSFORM_HUMAN: page = MENU_PAGE_HUMAN;
 		case ADMIN_TRANSFORM_ZOMBIE: page = MENU_PAGE_ZOMBIE;
@@ -581,7 +595,7 @@ public menu_player_list_handler(id, menu, item)
 	menu_item_getinfo(menu, item, dummy, player_id, charsmax(player_id), _, _, dummy);
 	player_menu_info(id, menudummy, menudummy, page);
 	
-	switch(g_admin_transform_into)
+	switch(g_admin_transform_into[id])
 	{
 		case ADMIN_TRANSFORM_HUMAN: page = MENU_PAGE_HUMAN;
 		case ADMIN_TRANSFORM_ZOMBIE: page = MENU_PAGE_ZOMBIE;
@@ -618,7 +632,7 @@ public menu_player_list_handler(id, menu, item)
 	}
 	
 	// Perform the action based on the current admin action
-	switch(g_admin_transform_into)
+	switch(g_admin_transform_into[id])
 	{
 		case ADMIN_TRANSFORM_HUMAN: // Transform the player into a human
 		{
@@ -1012,7 +1026,7 @@ public menu_admin_settings_handler(id, menu, item)
 	new key = data[0];   // Direct integer, no conversion needed
 	
 	// Switch based on the current admin menu context 
-	switch(g_admin_menu_info)
+	switch(g_admin_menu_info[id])
 	{
 		case ADMIN_MENU_HUMAN_SETTINGS: handle_human_settings(id, key);
 		case ADMIN_MENU_ZOMBIE_SETTINGS: handle_zombie_settings(id, key);
