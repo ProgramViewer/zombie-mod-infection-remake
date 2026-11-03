@@ -437,6 +437,7 @@ public zm_zombie_settings_menu(id)
 	menu_add_float(menuid, id, "MENU_SUPERZOMBIE_SPEED", cvar_superzombie_speed, data);
 	menu_add_float(menuid, id, "MENU_SUPERZOMBIE_GRAVITY", cvar_superzombie_gravity, data);
 	menu_add_int(menuid, id, "MENU_FIRSTZOMBIE_HEALTH", cvar_firstzombie_health, data);
+	menu_add_toggle(menuid, id, "MENU_FIRSTZOMBIE_SILENT", cvar_silent_firstzombie, data);
 	menu_add_int(menuid, id, "MENU_ZOMBIE_BRAINHEALTH", cvar_zombie_brainhealth, data);
 	menu_add_int(menuid, id, "MENU_SUPERZOMBIE_CHANCE", cvar_superzombie_chance, data)
 	menu_add_toggle(menuid, id, "MENU_SUPERZOMBIE_SWITCH", cvar_superzombie_enabled, data);
@@ -588,17 +589,18 @@ handle_zombie_settings(id, key)
 		case 5: process_float(id, cvar_superzombie_speed, "MENU_SUPERZOMBIE_SPEED_SET", 0.1);
 		case 6: process_float(id, cvar_superzombie_gravity, "MENU_SUPERZOMBIE_GRAVITY_SET", 0.1);
 		case 7: process_int(id, cvar_firstzombie_health, "MENU_FIRSTZOMBIE_HEALTH_SET", 1);
-		case 8: process_int(id, cvar_zombie_brainhealth, "MENU_ZOMBIE_BRAINHEALTH_SET", 0);
-		case 9: process_chance(id, cvar_superzombie_chance, "MENU_SUPERZOMBIE_CHANCE_SET");
-		case 10: toggle_item(cvar_superzombie_enabled, "MENU_SUPERZOMBIE_ENABLED_SET", id);
-		case 11: toggle_item(cvar_superzombie_infect, "MENU_SUPERZOMBIE_INFECT_SET", id);
-		case 12: process_float(id, cvar_zombie_armor, "MENU_ZOMBIE_ARMOR_SET", 0.1);
-		case 13: toggle_item(cvar_multi_enabled, "MENU_MULTI_SWITCH_SET", id);
-		case 14: process_int(id, cvar_multi_min_players, "MENU_MULTI_MIN_PLAYERS_SET", 1);
-		case 15: process_chance(id, cvar_multi_chance, "MENU_MULTI_CHANCE_SET");
-		case 16: process_step_int(id);
-		case 17: process_step_float(id);
-		case 18: toggle_step_mode(id);
+		case 8: toggle_item(cvar_silent_firstzombie, "MENU_FIRSTZOMBIE_SILENT_SET", id);
+		case 9: process_int(id, cvar_zombie_brainhealth, "MENU_ZOMBIE_BRAINHEALTH_SET", 0);
+		case 10: process_chance(id, cvar_superzombie_chance, "MENU_SUPERZOMBIE_CHANCE_SET");
+		case 11: toggle_item(cvar_superzombie_enabled, "MENU_SUPERZOMBIE_ENABLED_SET", id);
+		case 12: toggle_item(cvar_superzombie_infect, "MENU_SUPERZOMBIE_INFECT_SET", id);
+		case 13: process_float(id, cvar_zombie_armor, "MENU_ZOMBIE_ARMOR_SET", 0.1);
+		case 14: toggle_item(cvar_multi_enabled, "MENU_MULTI_SWITCH_SET", id);
+		case 15: process_int(id, cvar_multi_min_players, "MENU_MULTI_MIN_PLAYERS_SET", 1);
+		case 16: process_chance(id, cvar_multi_chance, "MENU_MULTI_CHANCE_SET");
+		case 17: process_step_int(id);
+		case 18: process_step_float(id);
+		case 19: toggle_step_mode(id);
 	}
 	zm_zombie_settings_menu(id);
 }
