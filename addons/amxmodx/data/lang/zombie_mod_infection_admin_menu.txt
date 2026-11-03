@@ -76,7 +76,11 @@ MENU_FIRSTZOMBIE_HEALTH = First Zombie Health
 MENU_ZOMBIE_BRAINHEALTH = Zombie Brain Health
 MENU_SUPERZOMBIE_CHANCE = Super Zombie appearance chance
 MENU_SUPERZOMBIE_SWITCH = Super Zombie Round
+MENU_SUPERZOMBIE_INFECT = Super Zombie Infection
 MENU_ZOMBIE_ARMOR = Zombie Armor
+MENU_MULTI_SWITCH = Multiple Infection Round
+MENU_MULTI_MIN_PLAYERS = Multiple Infection Min Players
+MENU_MULTI_CHANCE = Multiple Infection Chance
 
 MENU_ZOMBIE_HEALTH_SET = Zombie health set to 
 MENU_ZOMBIE_SPEED_SET = Zombie speed set to 
@@ -88,7 +92,11 @@ MENU_FIRSTZOMBIE_HEALTH_SET = First zombie health set to
 MENU_ZOMBIE_BRAINHEALTH_SET = Zombie brain health set to
 MENU_SUPERZOMBIE_ENABLED_SET = Super zombie is now
 MENU_SUPERZOMBIE_CHANCE_SET = Super zombie spawn chance
+MENU_SUPERZOMBIE_INFECT_SET = Super zombie infection is now
 MENU_ZOMBIE_ARMOR_SET = Zombie armor set to
+MENU_MULTI_SWITCH_SET = Mutiple infection round is now
+MENU_MULTI_MIN_PLAYERS_SET = Mutiple infection min players set to
+MENU_MULTI_CHANCE_SET = Mutiple infection chance set to
 
 MENU_WEAPON_RESTRICTIONS_TITLE = Zombie Mod Infection Menu \r[Weapon Restrictions] 
 MENU_WEAPON_DISPLAY = Weapon Menu 
