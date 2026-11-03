@@ -30,7 +30,6 @@ public plugin_init2()
 	RegisterHam(Ham_Touch, "weaponbox", "fw_TouchWeapon");
 	RegisterHam(Ham_Touch, "armoury_entity", "fw_TouchWeapon");
 	RegisterHam(Ham_Touch, "weapon_shield", "fw_TouchWeapon");
-	RegisterHam(Ham_Use, "func_pushable" ,"fw_UseStationary");
 	RegisterHam(Ham_Use, "func_tank" ,"fw_UseStationary");
 	RegisterHam(Ham_Use, "func_tankmortar" ,"fw_UseStationary");
 	RegisterHam(Ham_Use, "func_tanklaser" ,"fw_UseStationary");
