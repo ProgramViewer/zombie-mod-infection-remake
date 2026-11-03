@@ -12,6 +12,7 @@ MENU_EXIT = Exit
 MENU_BACK = Back
 MENU_NEXT = Next
 TXT_NO_ACCESS = You have no access.
+TXT_INVALID_ARGUMENT = Invalid Argument.
 
 MENU_TRANSFORM_HUMAN = Zombie Mod Infection Menu \r[Human Transformation] 
 MENU_TRANSFORM_ZOMBIE = Zombie Mod Infection Menu \r[Zombie Transformation] 
