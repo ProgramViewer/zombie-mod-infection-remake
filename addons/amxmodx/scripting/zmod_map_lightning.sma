@@ -2,19 +2,31 @@
     ------------------------------
     -*- [ZM] Map Lightning -*-
     ------------------------------
+
+	Changelog:
+	v1.0
+	- First Release
+    v1.3:
+    - Cached cvars (zmod_lights, zmod_thunderclap) on round start via HLTV event
+    - Replaced task_exists checks with boolean flag (O(1) performance)
+    - Eliminated redundant set_lights spam every 1.0 second
+    - Removed recursive call in thunder_cycle for safer state management
+    - Added fallback to "z" when lighting is disabled or empty
+    - Forced sv_skycolor to 0 and mp_playerid to 1 to prevent dark exploit
+    - Consolidated plugin_init2 into plugin_init
 ================================================================================*/
 
 #include <amxmodx>
 #include <engine>
 #include <zombiemod>
 
-#define VERSION "1.0"
+#define VERSION "1.3"
 
 // Default thunder sounds (you can add more)
 new const sound_thunder[][] = {"ambience/thunder_clap.wav"};
 
 // Lightning cycles
-new const thunder_lights[][] = {"ijklmnonnmlkjihgfedcb", "klmlkjihgfedcbaabcdedcb" , "bcdefedcijklmlkjihgfedcb"};
+new const thunder_lights[][] = {"ijklmnonnmlkjihgfedcb", "klmlkjihgfedcbaabcdedcb", "bcdefedcijklmlkjihgfedcb"};
 
 // Task IDs
 #define TASK_THUNDER 100
@@ -24,10 +36,13 @@ new const thunder_lights[][] = {"ijklmnonnmlkjihgfedcb", "klmlkjihgfedcbaabcdedc
 new g_ThunderLightIndex;
 new g_ThunderLightMaxLen;
 new g_ThunderLight[64];
+new bool:g_ThunderActive;
 
 // Cvars
 new cvar_lightning;
 new cvar_thunderclap;
+new g_cached_lightning[2];     
+new g_cached_thunderclap;   
 
 public plugin_precache()
 {
@@ -43,17 +58,21 @@ public plugin_init()
 	// Register Plugin
 	register_plugin("[ZM] Map Lightning", VERSION, "ProgramViewer");
 	
-	// Check if plugin is active
-	zmod_is_active() ? plugin_init2() : pause("ad");
-}
-
-public plugin_init2()
-{
+	// Check if Zombie Mod Infection is active
+	if(!zmod_is_active())
+	{
+		pause("ad");
+		return;
+	}
+	
+	// Event
+	register_event("HLTV", "event_new_round", "a", "1=0", "2=0");
+	
 	// Commands
 	set_cvar_num("sv_skycolor_r", 0);
 	set_cvar_num("sv_skycolor_g", 0);
 	set_cvar_num("sv_skycolor_b", 0);
-	set_cvar_string("sv_skyname", "space");
+	set_cvar_num("mp_playerid", 1); // Prevents seeing enemies in the dark exploit
 	
 	// Cvars
 	cvar_lightning = register_cvar("zmod_lights", "a");
@@ -62,47 +81,56 @@ public plugin_init2()
 
 public plugin_cfg()
 {
+	// Check if Zombie Mod Infection is active
 	if(!zmod_is_active())
 	{
 		return;
 	}
 	
-	// Prevents seeing enemies in the dark exploit
-	server_cmd("mp_playerid 1");
+	// Cache the cvars
+	cache_cvars();
 	
-	// lightning task
+	// Apply base lighting immediately on startup
+	ApplyBaseLighting();
+	
+	// Lightning task
 	set_task(1.0, "lightning_task", _, _, _, "b");
 }
 
-// lightning Task
+public event_new_round()
+{
+	// Cache cvar values on round start
+	cache_cvars();
+}
+
+// Lightning task
 public lightning_task()
 {
-	// Get lightning style from cvar
-	new lightning[2];
-	get_pcvar_string(cvar_lightning, lightning, charsmax(lightning));
-	
-	// lightning disabled? (cvar value "0")
-	if(lightning[0] == '0')
+	// Skip if thunder is already active
+	if(g_ThunderActive)
+	{
+		return;
+	}
+    
+	// Skip if lighting is disabled
+	if(g_cached_lightning[0] == '0' || g_cached_lightning[0] == EOS)
 	{
 		return;
 	}
 	
-	// Schedule thunder if thunderclap interval > 0 and no thunder task is running
-	new Float:thunder_time = get_pcvar_float(cvar_thunderclap);
-	if(thunder_time > 0.0 && !task_exists(TASK_THUNDER) && !task_exists(TASK_THUNDER_LIGHTS))
+	// Schedule thunder if interval > 0
+	if(g_cached_thunderclap > 0.0)
 	{
+		// Lock state to prevent overlapping cycles
+		g_ThunderActive = true;
+		
 		// Pick a random lightning pattern
 		copy(g_ThunderLight, charsmax(g_ThunderLight), thunder_lights[random_num(0, sizeof(thunder_lights) - 1)]);
 		g_ThunderLightMaxLen = strlen(g_ThunderLight);
 		g_ThunderLightIndex = 0;
 		
-		set_task(thunder_time, "thunder_start", TASK_THUNDER);
-	}
-	
-	// Apply base lightning only when no thunder cycle is active
-	if(!task_exists(TASK_THUNDER_LIGHTS))
-	{
-		set_lights(lightning);
+		// Schedule thunder start
+		set_task(float(g_cached_thunderclap), "thunder_start", TASK_THUNDER);
 	}
 }
 
@@ -119,22 +147,36 @@ public thunder_start()
 // Cycle through the light pattern
 public thunder_cycle()
 {
+	// Check if pattern is complete
 	if(g_ThunderLightIndex >= g_ThunderLightMaxLen)
 	{
-		// Cycle finished: stop and restore base lightning
-		remove_task(TASK_THUNDER_LIGHTS);
-		lightning_task();
+		remove_task(TASK_THUNDER_LIGHTS); // Stop visual cycle
+		g_ThunderActive = false;          // Unlock scheduling
+		ApplyBaseLighting();              // Restore base lighting
 		return;
 	}
-	
+    
+	// Apply current frame of the pattern
 	new light[2];
 	light[0] = g_ThunderLight[g_ThunderLightIndex];
 	set_lights(light);
-	g_ThunderLightIndex++;
+	g_ThunderLightIndex++; // Advance to next frame
 }
 
 // Plays a sound on clients
 stock PlaySound(const sound[])
 {
-	(equal(sound[strlen(sound)-4], ".mp3")) ? client_cmd(0, "mp3 play ^"sound/%s^"", sound) : client_cmd(0, "spk ^"%s^"", sound);
+	(equal(sound[strlen(sound) - 4], ".mp3")) ? client_cmd(0, "mp3 play ^"sound/%s^"", sound) : client_cmd(0, "spk ^"%s^"", sound);
+}
+
+stock cache_cvars()
+{
+	get_pcvar_string(cvar_lightning, g_cached_lightning, charsmax(g_cached_lightning));
+	g_cached_thunderclap = get_pcvar_num(cvar_thunderclap);
+}
+
+stock ApplyBaseLighting()
+{
+	// Apply cached lighting or fallback to "z" if disabled
+	(g_cached_lightning[0] == '0' || g_cached_lightning[0] == EOS) ? set_lights("z") : set_lights(g_cached_lightning);
 }
