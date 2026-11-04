@@ -37,8 +37,8 @@ public plugin_init2()
 	
 	// Message Hooks
 	register_message(get_user_msgid("SendAudio"), "message_sendaudio");
-	register_message(get_user_msgid("WeapPickup"), "message_weappickup");
-	register_message(get_user_msgid("AmmoPickup"), "message_ammopickup");
+	register_message(get_user_msgid("WeapPickup"), "message_pickup");
+	register_message(get_user_msgid("AmmoPickup"), "message_pickup");
 
     // Commands
 	register_clcmd("chooseteam", "clcmd_changeteam");
@@ -116,14 +116,8 @@ public fw_UsePushable()
 	return HAM_SUPERCEDE;
 }
 
-// Prevent zombies from seeing any weapon pickup icon
-public message_weappickup(msgid, msgdest, id)
-{
-	return is_player_zombie(id) ? PLUGIN_HANDLED : PLUGIN_CONTINUE;
-}
-
-// Prevent zombies from seeing any ammo pickup icon
-public message_ammopickup(msgid, dest, id)
+// Prevent zombies from seeing any pickup icon
+public message_pickup(msgid, msgdest, id)
 {
 	return is_player_zombie(id) ? PLUGIN_HANDLED : PLUGIN_CONTINUE;
 }
